@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-func TCPscanner(ports chan int, result chan int) {
+func TCPscanner(ports chan int, result chan int, wg *sync.WaitGroup) {
 
 	for p := range ports {
 		address := fmt.Sprintf("localhost:%d", p)
@@ -16,19 +16,17 @@ func TCPscanner(ports chan int, result chan int) {
 		if err == nil {
 			result <- p
 			fmt.Println(result)
-			defer conn.Close()
+			conn.Close()
 			break
 		} else {
 			continue
 		}
 
 	}
-	//fmt.Println("End of TCP scanner")
-	//fmt.Println("End")
+	wg.Done()
 }
 
 func TLSscanner(result chan int, openports map[int]string) {
-
 	conf := &tls.Config{
 		InsecureSkipVerify: true,
 	}
@@ -70,20 +68,20 @@ func main() {
 
 	for i := 0; i < cap(ports); i++ {
 		wg.Add(1)
-		go TCPscanner(ports, result)
+		go TCPscanner(ports, result, &wg)
 		go TLSscanner(result, openports)
-		wg.Done()
-
+		//wg.Done()
 	}
-
-	for i := 0; i < cap(ports); i++ {
-		port := <-result
-		if port == 0 {
-			return
-		}
-	}
-
 	wg.Wait()
+
+	fmt.Println("goroutines out")
+	//for i := 0; i < cap(ports); i++ {
+	//	port := <-result
+	//	if port == 0 {
+	//		continue
+	//	}
+	//	return
+	//}
 
 	//defer close(result)
 	//defer close(ports)
