@@ -4,15 +4,17 @@ import (
 	"crypto/tls"
 	"fmt"
 	"net"
+	"strconv"
 	"sync"
 	"time"
 )
 
+var address = "localhost:"
+
 func TCPscanner(ports chan int, result chan int, wg *sync.WaitGroup) {
 
 	for p := range ports {
-		address := fmt.Sprintf("localhost:%d", p)
-		conn, err := net.Dial("tcp", address)
+		conn, err := net.Dial("tcp", address+strconv.Itoa(p))
 		if err == nil {
 			result <- p
 			fmt.Println(result)
@@ -33,8 +35,7 @@ func TLSscanner(result chan int, openports map[int]string) {
 
 	for r := range result {
 		fmt.Println(r)
-		address := fmt.Sprintf("localhost:%d", r)
-		connTLS, err := tls.DialWithDialer(&net.Dialer{Timeout: 3 * time.Second}, "tcp", address, conf)
+		connTLS, err := tls.DialWithDialer(&net.Dialer{Timeout: 3 * time.Second}, "tcp", address+strconv.Itoa(r), conf)
 		if err != nil {
 			fmt.Println("1:", err)
 			openports[r] = "no TLS"
