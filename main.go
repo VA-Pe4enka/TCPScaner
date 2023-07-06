@@ -11,81 +11,86 @@ import (
 
 var address = "localhost:"
 
-func TCPscanner(ports chan int, result chan int, wg *sync.WaitGroup) {
-
+func TCPscanner(ports, results chan int) {
 	for p := range ports {
 		conn, err := net.Dial("tcp", address+strconv.Itoa(p))
-		if err == nil {
-			result <- p
-			fmt.Println(result)
-			conn.Close()
-			break
-		} else {
+		if err != nil {
+			results <- 0
 			continue
 		}
+		conn.Close()
+		results <- p
+		fmt.Println(p)
+	}
+}
+
+func TLSscanner(openports map[int]string, wg *sync.WaitGroup, mu *sync.Mutex) {
+	conf := &tls.Config{
+		InsecureSkipVerify: true,
+	}
+
+	for r := range openports {
+		connTLS, err := tls.DialWithDialer(&net.Dialer{Timeout: 3 * time.Second}, "tcp", address+strconv.Itoa(r), conf)
+		if err != nil {
+			mu.Lock()
+			openports[r] = "no TLS"
+			mu.Unlock()
+			break
+		} else {
+			mu.Lock()
+			fmt.Println("print cert:", connTLS.ConnectionState().PeerCertificates)
+			openports[r] = "TLS"
+			mu.Unlock()
+		}
+		connTLS.Close()
 
 	}
 	wg.Done()
 }
 
-func TLSscanner(result chan int, openports map[int]string) {
-	conf := &tls.Config{
-		InsecureSkipVerify: true,
-	}
-
-	for r := range result {
-		fmt.Println(r)
-		connTLS, err := tls.DialWithDialer(&net.Dialer{Timeout: 3 * time.Second}, "tcp", address+strconv.Itoa(r), conf)
-		if err != nil {
-			fmt.Println("1:", err)
-			openports[r] = "no TLS"
-			fmt.Println(openports)
-			break
-		} else {
-			fmt.Println("print cert:", connTLS.ConnectionState().PeerCertificates)
-			openports[r] = "TLS"
-			fmt.Println(openports)
-		}
-		connTLS.Close()
-
-	}
-	fmt.Println("End of TLS scanner")
-}
-
 func main() {
 	var wg sync.WaitGroup
-	openports := make(map[int]string)
+	var mu sync.Mutex
+
 	ports := make(chan int, 100)
-	result := make(chan int)
+	results := make(chan int)
+
+	openports := make(map[int]string)
+
+	mu.Lock()
+
+	start := time.Now()
+
+	fmt.Println("Start TCP scanner")
+	for i := 0; i < cap(ports); i++ {
+		go TCPscanner(ports, results)
+	}
 
 	go func() {
-		fmt.Println("Taking ports")
-		for i := 0; i <= 1024; i++ {
+		for i := 1; i <= 1024; i++ {
 			ports <- i
 		}
-		fmt.Println("Close channel ports")
-		close(ports)
 	}()
+	for i := 0; i < 1024; i++ {
+		port := <-results
+		if port != 0 {
+			openports[port] = ""
+		}
+	}
+	fmt.Println("Working time:", time.Since(start))
+
+	fmt.Println("End TCP scanner")
+	mu.Unlock()
 
 	for i := 0; i < cap(ports); i++ {
 		wg.Add(1)
-		go TCPscanner(ports, result, &wg)
-		go TLSscanner(result, openports)
-		//wg.Done()
+		go TLSscanner(openports, &wg, &mu)
 	}
 	wg.Wait()
 
-	fmt.Println("goroutines out")
-	//for i := 0; i < cap(ports); i++ {
-	//	port := <-result
-	//	if port == 0 {
-	//		continue
-	//	}
-	//	return
-	//}
-
-	//defer close(result)
-	//defer close(ports)
+	close(ports)
+	close(results)
 
 	fmt.Println(openports)
+
 }
