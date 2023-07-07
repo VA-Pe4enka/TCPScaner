@@ -12,19 +12,25 @@ import (
 var address = "localhost:"
 
 func TCPscanner(ports, results chan int) {
+
 	for p := range ports {
+		start := time.Now()
 		conn, err := net.Dial("tcp", address+strconv.Itoa(p))
 		if err != nil {
 			results <- 0
 			continue
 		}
+
 		conn.Close()
 		results <- p
 		fmt.Println(p)
+		fmt.Println("Working time:", time.Now().Sub(start))
 	}
+
 }
 
 func TLSscanner(openports map[int]string, wg *sync.WaitGroup, mu *sync.Mutex) {
+
 	conf := &tls.Config{
 		InsecureSkipVerify: true,
 	}
@@ -35,7 +41,7 @@ func TLSscanner(openports map[int]string, wg *sync.WaitGroup, mu *sync.Mutex) {
 			mu.Lock()
 			openports[r] = "no TLS"
 			mu.Unlock()
-			break
+			continue
 		} else {
 			mu.Lock()
 			fmt.Println("print cert:", connTLS.ConnectionState().PeerCertificates)
@@ -43,7 +49,6 @@ func TLSscanner(openports map[int]string, wg *sync.WaitGroup, mu *sync.Mutex) {
 			mu.Unlock()
 		}
 		connTLS.Close()
-
 	}
 	wg.Done()
 }
@@ -52,7 +57,7 @@ func main() {
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 
-	ports := make(chan int, 100)
+	ports := make(chan int, 1024)
 	results := make(chan int)
 
 	openports := make(map[int]string)
@@ -77,17 +82,18 @@ func main() {
 			openports[port] = ""
 		}
 	}
-	fmt.Println("Working time:", time.Since(start))
 
 	fmt.Println("End TCP scanner")
 	mu.Unlock()
 
-	for i := 0; i < cap(ports); i++ {
+	for i := 0; i < len(openports); i++ {
 		wg.Add(1)
 		go TLSscanner(openports, &wg, &mu)
+
 	}
 	wg.Wait()
 
+	fmt.Println("Total operating time:", time.Since(start))
 	close(ports)
 	close(results)
 
